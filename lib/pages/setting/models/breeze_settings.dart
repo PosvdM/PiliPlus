@@ -11,15 +11,23 @@ import 'package:material_ui/material_ui.dart';
 
 void _changed(String key) => BreezeService.onChanged([key]);
 
-List<SettingsModel> get breezeSettings => [
-  SwitchModel(
-    title: '启用哔哩清风',
-    subtitle: '用你的 AI API 识别动态和视频置顶评论中的广告、抽奖、活动宣传与招聘，按类别折叠',
-    leading: const Icon(Icons.air),
-    setKey: BreezeKey.enabled,
-    defaultVal: true,
-    onChanged: (_) => _changed(BreezeKey.enabled),
+/// Entry in 其它设置, below 空降助手: switch plus a tap to configure.
+SettingsModel get breezeEntry => SplitModel(
+  normalModel: const NormalModel.split(
+    title: '哔哩清风',
+    subtitle: '点击配置',
+    leading: Icon(Icons.air),
   ),
+  switchModel: SwitchModel.split(
+    defaultVal: true,
+    setKey: BreezeKey.enabled,
+    onChanged: (_) => _changed(BreezeKey.enabled),
+    onTap: (context) => Get.toNamed('/breezeSetting'),
+  ),
+);
+
+/// The configuration page; the on/off switch is [breezeEntry].
+List<SettingsModel> get breezeSettings => [
   NormalModel(
     title: 'API 设置',
     leading: const Icon(Icons.key_outlined),

@@ -1,4 +1,3 @@
-import 'package:PiliPlus/pages/setting/models/breeze_settings.dart';
 import 'package:PiliPlus/pages/setting/models/extra_settings.dart';
 import 'package:PiliPlus/pages/setting/models/model.dart';
 import 'package:PiliPlus/pages/setting/models/play_settings.dart';
@@ -14,7 +13,6 @@ enum SettingType {
   playSetting('播放器设置'),
   styleSetting('外观设置'),
   extraSetting('其它设置'),
-  breezeSetting('哔哩清风'),
   webdavSetting('WebDAV 设置'),
   about('关于'),
   ;
@@ -29,7 +27,6 @@ enum SettingType {
     .playSetting => playSettings,
     .styleSetting => styleSettings,
     .extraSetting => extraSettings,
-    .breezeSetting => breezeSettings,
     _ => throw UnimplementedError(),
   };
 }
