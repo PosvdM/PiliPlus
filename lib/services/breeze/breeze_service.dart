@@ -236,18 +236,38 @@ abstract final class BreezeService {
   /// drops the cached configuration, invalidates requests in flight and
   /// asks rendered items to check again.
   static void reload() {
+    _invalidate();
+    _events.add(const BreezeSettingsChanged());
+  }
+
+  // Tasks capture [_revision] when they start and check it right before each
+  // write, so nothing started earlier is written afterwards.
+  static void _invalidate() {
     _config = null;
     _revision++;
     _pending.clear();
     _cooldown = 0;
-    _events.add(const BreezeSettingsChanged());
+  }
+
+  static int _replacing = 0;
+
+  /// Runs [change], which replaces stored data (reset, import, WebDAV). Work
+  /// started before it is invalidated at once, no detection starts while it
+  /// runs, and rendered items check again when it is done.
+  static Future<T> replaceData<T>(Future<T> Function() change) async {
+    _replacing++;
+    _invalidate();
+    try {
+      return await change();
+    } finally {
+      _replacing--;
+      reload();
+    }
   }
 
   /// Deletes the API key, cache and records, as part of resetting all data.
-  static Future<void> clear() async {
-    await Future.wait([for (final box in boxes) box.clear()]);
-    reload();
-  }
+  static Future<void> clear() =>
+      replaceData(() => Future.wait([for (final box in boxes) box.clear()]));
 
   static Future<void> put(String key, Object? value) async {
     await GStorage.setting.put(key, value);
@@ -595,15 +615,22 @@ abstract final class BreezeService {
     bool Function()? cancelled,
     bool prefetch = false,
   }) async {
+    if (_replacing > 0) {
+      throw const BreezeException('设置已变更，请重试', transient: true);
+    }
     final rev = _revision;
     final result = await _detect(raw, cancelled, prefetch: prefetch);
-    if (rev != _revision) throw const BreezeException('设置已变更，请重试');
     // logDetection applies the author policy against the updated history.
-    await _logDetection(raw, result);
+    await _logDetection(raw, result, rev);
+    if (rev != _revision) throw const BreezeException('设置已变更，请重试');
     return result;
   }
 
-  static Future<void> _logDetection(BreezeRaw raw, BreezeResult result) {
+  static Future<void> _logDetection(
+    BreezeRaw raw,
+    BreezeResult result,
+    int rev,
+  ) {
     final author = raw.author.isEmpty
         ? '未知 UP 主'
         : raw.author.substring(0, raw.author.length.clamp(0, 80));
@@ -612,6 +639,9 @@ abstract final class BreezeService {
         : '';
     final id = historyId(raw);
     return _serialized(() async {
+      // Queued before a reset or import: skip. Checked again right before
+      // each write, with no await in between.
+      if (rev != _revision) return;
       final now = DateTime.now().millisecondsSinceEpoch;
       final old = _history.get(id) as Map?;
       final record = <String, dynamic>{
@@ -638,6 +668,7 @@ abstract final class BreezeService {
       // Only API-classified items may trigger it; whitelisted authors are
       // never auto-added.
       if (qualifies != null && !listed && result.rule == null) {
+        if (rev != _revision) return;
         await GStorage.setting.put(BreezeKey.enhancedList, [
           ...s.enhancedList.map((e) => e.toJson()),
           BreezeAuthor(
@@ -649,6 +680,7 @@ abstract final class BreezeService {
           ).toJson(),
         ]);
         onChanged([BreezeKey.enhancedList], authors: {authorId});
+        await debugAfterAutoCaution?.call();
         s = config;
       }
       applyPolicy(result, raw, s, rows.values);
@@ -662,6 +694,7 @@ abstract final class BreezeService {
         'cautionStatus': result.cautionStatus,
         'cautionSample': result.cautionSample,
       });
+      if (rev != _revision) return;
       await _history.put(id, record);
       if (_history.length > _historyLimit) {
         final sorted = _history.values.whereType<Map>().toList()
@@ -684,4 +717,13 @@ abstract final class BreezeService {
       );
 
   static Stream<BoxEvent> watchHistory() => _history.watch();
+
+  /// Awaited inside a record task after its settings write, so tests can
+  /// reset data while the task is paused there.
+  @visibleForTesting
+  static Future<void> Function()? debugAfterAutoCaution;
+
+  /// Holds the record queue until [gate] completes.
+  @visibleForTesting
+  static void debugHoldWrites(Future<void> gate) => _serialized(() => gate);
 }

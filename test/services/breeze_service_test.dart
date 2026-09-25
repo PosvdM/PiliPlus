@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:PiliPlus/services/breeze/breeze_rules.dart';
@@ -78,6 +79,98 @@ void main() {
     expect(BreezeService.history, isEmpty);
     expect(events.whereType<BreezeSettingsChanged>(), isNotEmpty);
     await sub.cancel();
+  });
+
+  group('records started before a reset are not written', () {
+    Future<void> configure(BreezeRaw raw) async {
+      await BreezeService.saveApi(
+        apiKey: 'secret',
+        provider: BreezeProvider.jev,
+        apiUrl: '',
+        apiModel: '',
+        apiProtocol: BreezeProtocol.openai,
+      );
+      // A cached ad result, so no request is sent.
+      await Hive.box('breezeCache').put(
+        breezeCacheKey(sanitize(raw), BreezeService.config),
+        {
+          'result': BreezeResult(
+            prob: .9,
+            categories: ['ad'],
+            kind: 'ad',
+          ).toJson(),
+          'expires': DateTime.now()
+              .add(const Duration(days: 1))
+              .millisecondsSinceEpoch,
+        },
+      );
+    }
+
+    test('a queued record', () async {
+      const raw = BreezeRaw(
+        kind: BreezeKind.dynamic,
+        text: '新品上市',
+        author: '测试UP',
+        authorId: '123',
+        itemId: 'queued',
+      );
+      await configure(raw);
+      final gate = Completer<void>();
+      BreezeService.debugHoldWrites(gate.future);
+      final pending = BreezeService.detect(raw);
+      await pumpEventQueue();
+
+      await BreezeService.clear();
+      gate.complete();
+
+      await expectLater(pending, throwsA(isA<BreezeException>()));
+      await pumpEventQueue();
+      expect(BreezeService.history, isEmpty);
+    });
+
+    test('a record whose task was already running', () async {
+      const uid = '777';
+      const raw = BreezeRaw(
+        kind: BreezeKind.dynamic,
+        text: '第十条商单',
+        author: '商单UP',
+        authorId: uid,
+        itemId: 'running',
+      );
+      await configure(raw);
+      // Nine earlier ads: the tenth adds the author to the cautious list,
+      // which writes the settings box before the record.
+      await Hive.box('breezeHistory').putAll({
+        for (var i = 0; i < 9; i++)
+          'seed$i': {
+            'id': 'seed$i',
+            'authorId': uid,
+            'type': 'dynamic',
+            'rule': 'category',
+            'classificationVersion': breezeClassificationVersion,
+            'prob': .9,
+            'firstSeen': i + 1,
+            'lastSeen': i + 1,
+          },
+      });
+      // The task resumes only after the whole reset has finished.
+      var reset = false;
+      BreezeService.debugAfterAutoCaution = () async {
+        await BreezeService.clear();
+        reset = true;
+      };
+      try {
+        await expectLater(
+          BreezeService.detect(raw),
+          throwsA(isA<BreezeException>()),
+        );
+      } finally {
+        BreezeService.debugAfterAutoCaution = null;
+      }
+      expect(reset, isTrue, reason: 'the task reached the settings write');
+      await pumpEventQueue();
+      expect(BreezeService.history, isEmpty);
+    });
   });
 
   test('API requests verify certificates despite global overrides', () async {

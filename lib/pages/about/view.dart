@@ -282,11 +282,12 @@ Commit Hash: ${BuildConfig.commitHash}''',
                     DialogOption(
                       onPressed: () async {
                         Get.back();
-                        await Future.wait([
-                          GStorage.setting.clear(),
-                          GStorage.video.clear(),
-                        ]);
-                        BreezeService.reload();
+                        await BreezeService.replaceData(
+                          () => Future.wait([
+                            GStorage.setting.clear(),
+                            GStorage.video.clear(),
+                          ]),
+                        );
                         SmartDialog.showToast('重置成功');
                       },
                       child: const Text('重置可导出的设置', style: style),

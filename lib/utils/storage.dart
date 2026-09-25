@@ -91,13 +91,13 @@ abstract final class GStorage {
 
   static Future<List<void>> importAllJsonSettings(
     Map<String, dynamic> map,
-  ) async {
-    final res = await Future.wait([
-      setting.clear().then((_) => setting.putAll(map[setting.name])),
-      video.clear().then((_) => video.putAll(map[video.name])),
-    ]);
-    BreezeService.reload();
-    return res;
+  ) {
+    return BreezeService.replaceData(
+      () => Future.wait([
+        setting.clear().then((_) => setting.putAll(map[setting.name])),
+        video.clear().then((_) => video.putAll(map[video.name])),
+      ]),
+    );
   }
 
   static void regAdapter() {
@@ -141,17 +141,19 @@ abstract final class GStorage {
   }
 
   static Future<List<void>> clear() {
-    return Future.wait([
-      userInfo.clear(),
-      historyWord.clear(),
-      localCache.clear(),
-      setting.clear(),
-      video.clear(),
-      Accounts.clear(),
-      watchProgress.clear(),
-      ?reply?.clear(),
-      BreezeService.clear(),
-    ]);
+    return BreezeService.replaceData(
+      () => Future.wait([
+        userInfo.clear(),
+        historyWord.clear(),
+        localCache.clear(),
+        setting.clear(),
+        video.clear(),
+        Accounts.clear(),
+        watchProgress.clear(),
+        ?reply?.clear(),
+        for (final box in BreezeService.boxes) box.clear(),
+      ]),
+    );
   }
 
   static int _intStrDescKeyComparator(dynamic k1, dynamic k2) {
