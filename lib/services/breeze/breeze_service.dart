@@ -10,6 +10,7 @@ import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hive_ce/hive.dart';
 
 abstract final class BreezeKey {
@@ -69,6 +70,9 @@ class BreezeCancelled implements Exception {
   const BreezeCancelled();
 }
 
+/// The default [HttpOverrides] behavior, without the app's global changes.
+class _StrictHttpOverrides extends HttpOverrides {}
+
 abstract final class BreezeService {
   static const _cacheTtl = Duration(days: 30);
   static const _cacheLimit = 5000;
@@ -92,6 +96,8 @@ abstract final class BreezeService {
 
   static BreezeConfig? _config;
 
+  /// Opens BiliBreeze's own boxes. Must not read [GStorage.setting]: it is
+  /// opened in parallel and may not be ready yet.
   static Future<void> init() async {
     await Future.wait([
       Hive.openBox('breeze').then((res) => _secret = res),
@@ -104,7 +110,6 @@ abstract final class BreezeService {
         compactionStrategy: (entries, deletedEntries) => deletedEntries > 50,
       ).then((res) => _history = res),
     ]);
-    await _migratePrompt();
     final now = DateTime.now().millisecondsSinceEpoch;
     final expired = _cache.keys.where((k) {
       final e = _cache.get(k);
@@ -113,20 +118,22 @@ abstract final class BreezeService {
     if (expired.isNotEmpty) await _cache.deleteAll(expired);
   }
 
-  // Keeps the meaning of an extra prompt from earlier test builds.
-  static Future<void> _migratePrompt() async {
-    final s = GStorage.setting;
+  // Keeps the meaning of an extra prompt from earlier test builds. Runs on
+  // the first settings read, so it never races the settings box opening.
+  static String _rulesPrompt(Box<dynamic> s) {
     final old = s.get(BreezeKey._legacyCustomPrompt);
-    if (old is! String) return;
-    if (old.trim().isNotEmpty && s.get(BreezeKey.rulesPrompt) == null) {
-      await s.put(
-        BreezeKey.rulesPrompt,
-        normalizeBreezePrompt(
-          '$breezeDefaultPrompt\n用户补充规则（与上文冲突时以此为准）：${old.trim()}',
-        ),
-      );
+    if (old is! String) {
+      return normalizeBreezePrompt(s.get(BreezeKey.rulesPrompt));
     }
-    await s.delete(BreezeKey._legacyCustomPrompt);
+    var prompt = s.get(BreezeKey.rulesPrompt);
+    if (old.trim().isNotEmpty && prompt == null) {
+      prompt = normalizeBreezePrompt(
+        '$breezeDefaultPrompt\n用户补充规则（与上文冲突时以此为准）：${old.trim()}',
+      );
+      s.put(BreezeKey.rulesPrompt, prompt);
+    }
+    s.delete(BreezeKey._legacyCustomPrompt);
+    return normalizeBreezePrompt(prompt);
   }
 
   static List<Box<dynamic>> get boxes => [_secret, _cache, _history];
@@ -193,7 +200,7 @@ abstract final class BreezeService {
       apiUrl: s.get(BreezeKey.apiUrl, defaultValue: ''),
       apiModel: s.get(BreezeKey.apiModel, defaultValue: ''),
       apiProtocol: BreezeProtocol.values[protocolIndex.clamp(0, 1)],
-      rulesPrompt: normalizeBreezePrompt(s.get(BreezeKey.rulesPrompt)),
+      rulesPrompt: _rulesPrompt(s),
     );
   }
 
@@ -223,6 +230,23 @@ abstract final class BreezeService {
     }
     _cooldown = 0;
     _events.add(const BreezeSettingsChanged());
+  }
+
+  /// Call after the settings box was replaced (reset, import, WebDAV):
+  /// drops the cached configuration, invalidates requests in flight and
+  /// asks rendered items to check again.
+  static void reload() {
+    _config = null;
+    _revision++;
+    _pending.clear();
+    _cooldown = 0;
+    _events.add(const BreezeSettingsChanged());
+  }
+
+  /// Deletes the API key, cache and records, as part of resetting all data.
+  static Future<void> clear() async {
+    await Future.wait([for (final box in boxes) box.clear()]);
+    reload();
   }
 
   static Future<void> put(String key, Object? value) async {
@@ -336,19 +360,33 @@ abstract final class BreezeService {
 
   // Separate from Request.dio: no bilibili cookies or account headers, and
   // certificates are always verified since the request carries the API key.
-  static Dio get _client => _dio ??= Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 25),
-      receiveTimeout: const Duration(seconds: 25),
-      sendTimeout: const Duration(seconds: 25),
-      followRedirects: false,
-      validateStatus: (_) => true,
-      responseType: ResponseType.json,
-    ),
-  )..httpClientAdapter = IOHttpClientAdapter(createHttpClient: _httpClient);
+  static Dio get _client => _dio ??=
+      Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 25),
+            receiveTimeout: const Duration(seconds: 25),
+            sendTimeout: const Duration(seconds: 25),
+            followRedirects: false,
+            validateStatus: (_) => true,
+            responseType: ResponseType.json,
+          ),
+        )
+        ..httpClientAdapter = IOHttpClientAdapter(
+          createHttpClient: createHttpClient,
+        );
 
-  static HttpClient _httpClient() {
-    final client = HttpClient()..idleTimeout = const Duration(seconds: 15);
+  /// The app's [HttpOverrides.global] accepts any certificate in debug
+  /// builds or with 忽略证书错误; this client carries the API key, so it
+  /// bypasses the overrides and always verifies certificates.
+  @visibleForTesting
+  static HttpClient createHttpClient() {
+    final client =
+        HttpOverrides.runWithHttpOverrides(
+            HttpClient.new,
+            _StrictHttpOverrides(),
+          )
+          ..idleTimeout = const Duration(seconds: 15)
+          ..badCertificateCallback = (cert, host, port) => false;
     if (Pref.enableSystemProxy) {
       final host = Pref.systemProxyHost;
       final port = int.tryParse(Pref.systemProxyPort);
@@ -557,7 +595,9 @@ abstract final class BreezeService {
     bool Function()? cancelled,
     bool prefetch = false,
   }) async {
+    final rev = _revision;
     final result = await _detect(raw, cancelled, prefetch: prefetch);
+    if (rev != _revision) throw const BreezeException('设置已变更，请重试');
     // logDetection applies the author policy against the updated history.
     await _logDetection(raw, result);
     return result;

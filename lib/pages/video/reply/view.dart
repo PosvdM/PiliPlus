@@ -207,12 +207,20 @@ class _VideoReplyPanelState extends State<VideoReplyPanel>
                 );
                 if (index == 0 && _videoReplyController.hasUpTop) {
                   final reply = response[index];
-                  return BreezeFold(
+                  Widget fold() => BreezeFold(
                     kind: BreezeKind.pinned,
                     source: reply,
                     raw: () => _videoReplyController.breezePinnedRaw(reply),
                     child: child,
                   );
+                  // Rebuild when the video details arrive; the title and
+                  // uploader are part of what is judged.
+                  final detail = _videoReplyController.breezeVideoDetail;
+                  if (detail == null) return fold();
+                  return Obx(() {
+                    detail.value;
+                    return fold();
+                  });
                 }
                 return child;
               }

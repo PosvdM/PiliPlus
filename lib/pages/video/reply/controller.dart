@@ -3,6 +3,7 @@ import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart'
 import 'package:PiliPlus/grpc/reply.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/video/video_type.dart';
+import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/pages/common/reply_controller.dart';
 import 'package:PiliPlus/pages/video/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/pgc/controller.dart';
@@ -31,25 +32,28 @@ class VideoReplyController extends ReplyController<MainListReply>
   @override
   dynamic get sourceId => IdUtils.av2bv(aid);
 
+  /// The video details the pinned comment is judged with; null until the
+  /// intro controller exists.
+  Rx<VideoDetailData>? get breezeVideoDetail {
+    try {
+      return videoCtr.isUgc
+          ? Get.find<UgcIntroController>(tag: heroTag).videoDetail
+          : Get.find<PgcIntroController>(tag: heroTag).videoDetail;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Null until the video details are loaded: the title and uploader are
+  /// part of the request, so judging earlier would use missing context.
   BreezeRaw? breezePinnedRaw(ReplyInfo reply) {
     final isUgc = videoCtr.isUgc;
-    String title = '';
-    String upName = '';
-    try {
-      if (isUgc) {
-        final detail = Get.find<UgcIntroController>(
-          tag: heroTag,
-        ).videoDetail.value;
-        title = detail.title ?? '';
-        upName = detail.owner?.name ?? '';
-      } else {
-        title =
-            Get.find<PgcIntroController>(
-              tag: heroTag,
-            ).videoDetail.value.title ??
-            '';
-      }
-    } catch (_) {}
+    final detail = breezeVideoDetail?.value;
+    final title = detail?.title ?? '';
+    // The ugc title is known from the route arguments before the details
+    // load; the uploader's name arrives with them.
+    final upName = isUgc ? detail?.owner?.name ?? '' : '';
+    if (title.isEmpty || (isUgc && upName.isEmpty)) return null;
     final mid = upMid?.toInt() ?? 0;
     return BreezeContent.fromPinnedReply(
       reply,
@@ -67,11 +71,7 @@ class VideoReplyController extends ReplyController<MainListReply>
     final handled = super.customHandleResponse(isRefresh, response);
     if (isRefresh && hasUpTop) {
       final reply = response.response.upTop;
-      // The title is part of the request; wait for it rather than send twice.
-      BreezeService.prefetch(() {
-        final raw = breezePinnedRaw(reply);
-        return [if (raw != null && raw.title.isNotEmpty) raw];
-      }, BreezeKind.pinned);
+      BreezeService.prefetch(() => [breezePinnedRaw(reply)], BreezeKind.pinned);
     }
     return handled;
   }

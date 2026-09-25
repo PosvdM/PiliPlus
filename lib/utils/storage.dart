@@ -91,11 +91,13 @@ abstract final class GStorage {
 
   static Future<List<void>> importAllJsonSettings(
     Map<String, dynamic> map,
-  ) {
-    return Future.wait([
+  ) async {
+    final res = await Future.wait([
       setting.clear().then((_) => setting.putAll(map[setting.name])),
       video.clear().then((_) => video.putAll(map[video.name])),
     ]);
+    BreezeService.reload();
+    return res;
   }
 
   static void regAdapter() {
@@ -148,7 +150,7 @@ abstract final class GStorage {
       Accounts.clear(),
       watchProgress.clear(),
       ?reply?.clear(),
-      for (final box in BreezeService.boxes) box.clear(),
+      BreezeService.clear(),
     ]);
   }
 

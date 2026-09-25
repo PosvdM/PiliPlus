@@ -49,7 +49,8 @@ class _BreezeFoldState extends State<BreezeFold> {
   @override
   void didUpdateWidget(BreezeFold oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (identical(oldWidget.source, widget.source)) return;
+    // Compare the full input, not just the item: context such as a video's
+    // title can arrive after the item itself.
     final raw = _buildRaw();
     // The list rebuilt the same content, e.g. after a refresh.
     if (raw?.identity == _raw?.identity) return;
