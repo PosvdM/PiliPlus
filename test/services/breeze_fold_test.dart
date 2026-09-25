@@ -76,11 +76,9 @@ void main() {
         ),
       ),
     );
-    expect(
-      find.text('CONTENT'),
-      findsOneWidget,
-      reason: 'visible until checked',
-    );
+    // Prefetched results render folded in the first frame, no collapse.
+    expect(find.text('测试UP · 广告 · 90%'), findsOneWidget);
+    expect(find.text('CONTENT'), findsNothing);
 
     await settle(tester);
     expect(find.text('测试UP · 广告 · 90%'), findsOneWidget);

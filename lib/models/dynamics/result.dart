@@ -6,6 +6,9 @@ import 'package:PiliPlus/models/dynamics/article_content_model.dart';
 import 'package:PiliPlus/models/model_avatar.dart';
 import 'package:PiliPlus/models/model_owner.dart';
 import 'package:PiliPlus/models_new/live/live_feed_index/watched_show.dart';
+import 'package:PiliPlus/services/breeze/breeze_content.dart';
+import 'package:PiliPlus/services/breeze/breeze_rules.dart' show BreezeKind;
+import 'package:PiliPlus/services/breeze/breeze_service.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
 import 'package:PiliPlus/utils/parse_bool.dart';
 import 'package:PiliPlus/utils/parse_int.dart';
@@ -87,6 +90,12 @@ class DynamicsDataModel {
       // filtered all
       if (items!.isEmpty) {
         loadNext = hasMore;
+      } else {
+        final items = this.items!;
+        BreezeService.prefetch(
+          () => items.map(BreezeContent.fromDynamic),
+          BreezeKind.dynamic,
+        );
       }
     }
 

@@ -76,6 +76,7 @@ abstract final class BreezeService {
   static int _revision = 0;
   static int _cooldown = 0;
   static int _active = 0;
+  static const _maxActive = 3;
   static final _waiting = <Completer<void>>[];
   static Future<void> _historyWrites = Future.value();
 
@@ -386,12 +387,16 @@ abstract final class BreezeService {
     );
   }
 
-  static Future<void> _acquire(bool Function()? cancelled) async {
-    if (_active < 2) {
+  static Future<void> _acquire(
+    bool Function()? cancelled, {
+    required bool prefetch,
+  }) async {
+    if (_active < _maxActive) {
       _active++;
       return;
     }
-    if (_waiting.length >= 30) {
+    // Prefetching leaves room in the queue for items already on screen.
+    if (_waiting.length >= (prefetch ? 20 : 30)) {
       throw const BreezeException('待检测内容较多，请稍后重试', transient: true);
     }
     final completer = Completer<void>();
@@ -438,8 +443,9 @@ abstract final class BreezeService {
 
   static Future<BreezeResult> _detect(
     BreezeRaw raw,
-    bool Function()? cancelled,
-  ) async {
+    bool Function()? cancelled, {
+    bool prefetch = false,
+  }) async {
     final state = sanitize(raw);
     // Capture before reading settings, so a change during the read is detected.
     final rev = _revision;
@@ -454,9 +460,18 @@ abstract final class BreezeService {
     }
     final key = breezeCacheKey(state, s);
     if (_cached(key) case final cached?) return cached;
-    if (_pending[key] case final pending?) return (await pending).copy();
+    if (_pending[key] case final pending?) {
+      try {
+        return (await pending).copy();
+      } on BreezeCancelled {
+        // Whoever started it went away; this caller still needs the result.
+        if (cancelled?.call() ?? false) rethrow;
+        if (identical(_pending[key], pending)) _pending.remove(key);
+        return _detect(raw, cancelled, prefetch: prefetch);
+      }
+    }
     final request = () async {
-      await _acquire(cancelled);
+      await _acquire(cancelled, prefetch: prefetch);
       try {
         if (rev != _revision) throw const BreezeException('设置已变更，请重试');
         if (DateTime.now().millisecondsSinceEpoch < _cooldown) {
@@ -483,12 +498,38 @@ abstract final class BreezeService {
     }
   }
 
+  /// The result available without waiting: a local rule or a cached answer,
+  /// with the current author policy applied. Lets items render folded
+  /// right away instead of collapsing on screen.
+  static BreezeResult? peek(BreezeRaw raw) {
+    final s = config;
+    if (!s.kindEnabled(raw.kind) || !s.configured) return null;
+    final state = sanitize(raw);
+    final result =
+        localDecision(raw, state, s) ?? _cached(breezeCacheKey(state, s));
+    if (result == null) return null;
+    return applyPolicy(result, raw, s, _history.values.whereType<Map>());
+  }
+
+  /// Classifies loaded items before they scroll into view, so they are
+  /// already folded when they appear, as the extension does off screen.
+  static void prefetch(Iterable<BreezeRaw?> Function() items, BreezeKind kind) {
+    final s = config;
+    if (!s.kindEnabled(kind) || !s.configured) return;
+    for (final raw in items()) {
+      if (raw != null) {
+        detect(raw, prefetch: true).ignore();
+      }
+    }
+  }
+
   /// Classifies an item and applies the author policy.
   static Future<BreezeResult> detect(
     BreezeRaw raw, {
     bool Function()? cancelled,
+    bool prefetch = false,
   }) async {
-    final result = await _detect(raw, cancelled);
+    final result = await _detect(raw, cancelled, prefetch: prefetch);
     // logDetection applies the author policy against the updated history.
     await _logDetection(raw, result);
     return result;

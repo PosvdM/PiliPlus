@@ -43,7 +43,7 @@ class _BreezeFoldState extends State<BreezeFold> {
   void initState() {
     super.initState();
     _sub = BreezeService.events.listen(_onEvent);
-    _schedule();
+    _start();
   }
 
   @override
@@ -55,7 +55,7 @@ class _BreezeFoldState extends State<BreezeFold> {
     if (raw?.identity == _raw?.identity) return;
     _reset();
     _raw = raw;
-    _schedule();
+    _start();
   }
 
   @override
@@ -81,15 +81,13 @@ class _BreezeFoldState extends State<BreezeFold> {
     _expanded = false;
   }
 
-  void _schedule({bool immediate = false}) {
+  void _start() {
     _timer?.cancel();
     final raw = _raw ??= _buildRaw();
     if (raw == null) return;
-    // Items scrolled past quickly are disposed before they cost a request.
-    _timer = Timer(
-      immediate ? Duration.zero : const Duration(milliseconds: 300),
-      _run,
-    );
+    // Usually prefetched while off screen, so render folded from the start.
+    _result ??= BreezeService.peek(raw);
+    _timer = Timer(Duration.zero, _run);
   }
 
   Future<void> _run() async {
@@ -101,6 +99,7 @@ class _BreezeFoldState extends State<BreezeFold> {
       final result = await BreezeService.detect(raw, cancelled: stale);
       if (stale()) return;
       setState(() {
+        if (result.fold != _result?.fold) _expanded = false;
         _result = result;
         _error = null;
       });
@@ -121,8 +120,10 @@ class _BreezeFoldState extends State<BreezeFold> {
     if (!mounted) return;
     switch (event) {
       case BreezeSettingsChanged():
-        setState(_reset);
-        _schedule(immediate: true);
+        setState(() {
+          _reset();
+          _start();
+        });
       case BreezeAuthorChanged(:final uid):
         if (_raw?.authorId == uid && _result != null) _recheck();
     }
@@ -184,7 +185,7 @@ class _BreezeFoldState extends State<BreezeFold> {
             action: '重试',
             onTap: () {
               setState(() => _error = null);
-              _schedule(immediate: true);
+              _start();
             },
           ),
         ],

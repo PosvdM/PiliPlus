@@ -11,15 +11,11 @@ import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart'
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/pages/breeze/breeze_fold.dart';
 import 'package:PiliPlus/pages/common/fab_mixin.dart';
-import 'package:PiliPlus/pages/video/introduction/pgc/controller.dart';
-import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/pages/video/reply/controller.dart';
 import 'package:PiliPlus/pages/video/reply/vote/reply_vote_item.dart';
 import 'package:PiliPlus/pages/video/reply/widgets/reply_item_grpc.dart';
 import 'package:PiliPlus/pages/video/reply_reply/view.dart';
-import 'package:PiliPlus/services/breeze/breeze_content.dart';
-import 'package:PiliPlus/services/breeze/breeze_rules.dart';
-import 'package:PiliPlus/utils/id_utils.dart';
+import 'package:PiliPlus/services/breeze/breeze_rules.dart' show BreezeKind;
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:easy_debounce/easy_throttle.dart';
 import 'package:get/get.dart';
@@ -51,38 +47,6 @@ class _VideoReplyPanelState extends State<VideoReplyPanel>
   late VideoReplyController _videoReplyController;
 
   String get heroTag => widget.heroTag;
-
-  BreezeRaw? _pinnedRaw(ReplyInfo reply) {
-    final ctr = _videoReplyController;
-    final isUgc = ctr.videoCtr.isUgc;
-    String title = '';
-    String upName = '';
-    try {
-      if (isUgc) {
-        final detail = Get.find<UgcIntroController>(
-          tag: heroTag,
-        ).videoDetail.value;
-        title = detail.title ?? '';
-        upName = detail.owner?.name ?? '';
-      } else {
-        title =
-            Get.find<PgcIntroController>(
-              tag: heroTag,
-            ).videoDetail.value.title ??
-            '';
-      }
-    } catch (_) {}
-    final upMid = ctr.upMid?.toInt() ?? 0;
-    return BreezeContent.fromPinnedReply(
-      reply,
-      upName: upName,
-      upMid: upMid > 0 ? '$upMid' : '',
-      title: title,
-      url: isUgc
-          ? 'https://www.bilibili.com/video/${IdUtils.av2bv(ctr.aid)}'
-          : 'https://www.bilibili.com/bangumi/play/ep${ctr.videoCtr.epId}',
-    );
-  }
 
   @override
   bool get wantKeepAlive => true;
@@ -246,7 +210,7 @@ class _VideoReplyPanelState extends State<VideoReplyPanel>
                   return BreezeFold(
                     kind: BreezeKind.pinned,
                     source: reply,
-                    raw: () => _pinnedRaw(reply),
+                    raw: () => _videoReplyController.breezePinnedRaw(reply),
                     child: child,
                   );
                 }
