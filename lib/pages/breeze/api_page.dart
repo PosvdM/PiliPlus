@@ -145,7 +145,7 @@ class _BreezeApiPageState extends State<BreezeApiPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '密钥仅存本机，不随设置导出。识别会将文字、标题和链接发送给 API 服务商并使用你的额度；不读取图片或视频。',
+            '密钥仅存本机，不随设置导出。识别会将文字、作者名称、标题和链接发送给 API 服务商并使用你的额度；不读取图片或视频。',
             style: note,
           ),
           const SizedBox(height: 16),

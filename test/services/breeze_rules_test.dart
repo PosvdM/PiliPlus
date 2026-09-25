@@ -76,7 +76,7 @@ void main() {
     );
     expect(
       breezeCacheKey(state, const BreezeConfig()),
-      '34026caae8ab0e91e4a819fd6e383e7a80b99c67045cb1a3aa1a5e14dcc1f878',
+      '4ec74085f9ed25466ccc1a133aa704d8b446f4da9a5e579977a3eef9570c6135',
     );
     expect(
       historyId(
@@ -294,70 +294,110 @@ void main() {
     );
   });
 
-  test('editable prompt replaces the rules, output format stays', () {
+  test('prompts and requests match the extension', () {
+    expect(breezeClassificationVersion, 'general-rules-v8');
     expect(
       sha256Hex(breezeDefaultPrompt),
-      '0e4c9ccab6ab2a8edf99f42e50cddf8d98a81eb2d9de1ac80bb37a1aa392f661',
-      reason: 'same built-in prompt as the extension',
+      '7d38e3528fb0ec9d7e6eaad4faedcc6cb180457b8881ef2e1836e5626e6bfece',
     );
+    expect(
+      sha256Hex(breezeGiveawayPrompt),
+      '3de847744207fe15ce775dd8a6394abd105b65e422eba97c21939ed40e69fa3d',
+    );
+
+    const lotteryRaw = BreezeRaw(
+      kind: BreezeKind.dynamic,
+      text: '互动抽奖 转发关注抽1人送耳机',
+      originalText: '感谢支持',
+      forwardedText: '互动抽奖',
+      links: ['https://t.bilibili.com/1'],
+    );
+    const officialRaw = BreezeRaw(
+      kind: BreezeKind.dynamic,
+      author: '  游戏科学  ',
+      authorId: '123',
+      text: '《黑神话：钟馗》首支预告',
+    );
+    final lottery = sanitize(lotteryRaw);
+    final official = sanitize(officialRaw);
+    expect(official['author'], '游戏科学');
+    expect(
+      official.containsKey('authorId'),
+      isFalse,
+      reason: 'UID stays local',
+    );
+
+    expect(
+      breezeCacheKey(
+        lottery,
+        const BreezeConfig(rulesPrompt: '游戏官方号宣传新活动也算广告'),
+      ),
+      'a3bfc20ee9b14883c89d8349f06612e10ec5b401c0ebe8f66099a3bbdaf54fbb',
+    );
+
+    String payload(Map<String, dynamic> state, BreezeConfig config) =>
+        sha256Hex(buildRequest(state, config).payload);
+    const openai = BreezeConfig(
+      provider: BreezeProvider.custom,
+      apiUrl: 'https://example.test/v1/chat/completions',
+      apiModel: ' m ',
+    );
+    expect(
+      payload(lottery, const BreezeConfig()),
+      '17612581b18d73bf0da1a82edd4f253dd2315afaf220479168bf78162042c75c',
+    );
+    expect(
+      payload(official, const BreezeConfig()),
+      'bdd0be17c00614ddfd455fca1dd3fee509aedaa2024670da089d0de06b10d510',
+    );
+    expect(
+      payload(
+        lottery,
+        const BreezeConfig(
+          provider: BreezeProvider.custom,
+          apiUrl: 'https://example.test/v1/chat/completions',
+          apiModel: ' m ',
+          rulesPrompt: '只判断品牌商单。',
+        ),
+      ),
+      '124a4c4339ce0e721a306cb0770d1366fe57201b62303a24621ffa9b730d52ed',
+    );
+    expect(
+      payload(official, openai),
+      'be7d06f63509664b096d9ea1fd49ab455edaeae0db4489da75bb6d67a4d5fbcc',
+    );
+  });
+
+  test('editable prompt replaces the rules, output format stays', () {
     expect(normalizeBreezePrompt('  $breezeDefaultPrompt  '), '');
     expect(normalizeBreezePrompt('   '), '');
     expect(normalizeBreezePrompt('A' * 5000), 'A' * breezePromptLimit);
 
-    const prompt = '游戏官方号宣传新活动也算广告';
+    const prompt = '只判断是否为品牌商单。';
     final state = sanitize(
-      const BreezeRaw(
-        kind: BreezeKind.dynamic,
-        text: '互动抽奖 转发关注抽1人送耳机',
-        originalText: '感谢支持',
-        forwardedText: '互动抽奖',
-        links: ['https://t.bilibili.com/1'],
-      ),
+      const BreezeRaw(kind: BreezeKind.dynamic, text: '互动抽奖 转发抽1人送耳机'),
     );
-    expect(
-      breezeCacheKey(state, const BreezeConfig(rulesPrompt: prompt)),
-      '3732019683af9301e501dd12a35cfd0e38100616e75b531d0701d90e3dc87d3a',
-      reason: 'same key as the extension',
-    );
-
-    final builtin = buildRequest(state, const BreezeConfig(apiKey: 'k'));
-    final builtinQuestions = builtin.payload['questions'] as Map;
-    expect(
-      (builtinQuestions['is_ad'] as Map)['instructions'],
-      '$breezeDefaultPrompt 返回广告概率。',
-    );
-
-    final jev = buildRequest(
-      state,
-      const BreezeConfig(apiKey: 'k', rulesPrompt: prompt),
-    );
+    final jev = buildRequest(state, const BreezeConfig(rulesPrompt: prompt));
     final questions = jev.payload['questions'] as Map;
-    expect((questions['is_ad'] as Map)['instructions'], '$prompt 返回广告概率。');
-    expect(
-      (questions['is_event'] as Map)['instructions'],
-      '$prompt 返回活动宣传概率。',
-    );
+    expect((questions['is_ad'] as Map)['instructions'], '$prompt\n返回广告概率。');
     expect(
       (questions['giveaway_primary'] as Map)['instructions'],
       allOf(startsWith('仅判断输入内容中的抽奖主次'), isNot(contains(prompt))),
       reason: 'giveaway rules stay built in',
     );
-    expect(jev.payload['model'], 'jev-latest');
-
-    final openai = buildRequest(
-      sanitize(const BreezeRaw(kind: BreezeKind.dynamic, text: '周边开售')),
-      const BreezeConfig(
-        apiKey: 'k',
-        provider: BreezeProvider.custom,
-        apiUrl: 'https://example.test/v1/chat/completions',
-        apiModel: 'm',
-        rulesPrompt: prompt,
-      ),
+    final builtin = buildRequest(state, const BreezeConfig()).payload;
+    expect(
+      ((builtin['questions'] as Map)['is_ad'] as Map)['instructions'],
+      '$breezeDefaultPrompt\n返回广告概率。',
     );
-    final system =
-        ((openai.payload['messages'] as List).first as Map)['content']
-            as String;
-    expect(system, startsWith('$prompt只输出JSON'));
+  });
+
+  test('old rule versions do not count toward auto caution', () {
+    final old = [
+      for (var i = 0; i < 10; i++)
+        {..._row(i, .99), 'classificationVersion': 'events-v5'},
+    ];
+    expect(authorRatio(old, '123', const BreezeConfig()), isNull);
   });
 
   test('fold label', () {
