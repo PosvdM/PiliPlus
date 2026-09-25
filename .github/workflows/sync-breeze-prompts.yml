@@ -7,6 +7,13 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Branch to sync (for testing the workflow)"
+        default: feat/bili-breeze
+
+env:
+  TARGET: ${{ inputs.target || 'feat/bili-breeze' }}
 
 permissions:
   contents: write
@@ -22,7 +29,7 @@ jobs:
       - name: Checkout PiliPlus
         uses: actions/checkout@v7
         with:
-          ref: feat/bili-breeze
+          ref: ${{ env.TARGET }}
           fetch-depth: 0
           path: piliplus
 
@@ -80,14 +87,14 @@ jobs:
           git add -f test/services/breeze_prompt_fixtures.json
           git commit -m "chore(breeze): ${{ steps.sync.outputs.summary }}"
 
-      - name: Push to feat/bili-breeze
+      - name: Push
         if: steps.sync.outputs.changed == 'true' && steps.test.outcome == 'success'
         working-directory: piliplus
-        run: git push origin HEAD:feat/bili-breeze
+        run: git push origin "HEAD:$TARGET"
 
       # Keep the Android test build branch on top of the feature.
       - name: Rebase test/android-dev
-        if: steps.sync.outputs.changed == 'true' && steps.test.outcome == 'success'
+        if: steps.sync.outputs.changed == 'true' && steps.test.outcome == 'success' && env.TARGET == 'feat/bili-breeze'
         working-directory: piliplus
         run: |
           if git ls-remote --exit-code --heads origin test/android-dev > /dev/null; then
