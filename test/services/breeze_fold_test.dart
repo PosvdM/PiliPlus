@@ -86,7 +86,7 @@ void main() {
     expect(find.text('测试UP · 广告 · 90%'), findsOneWidget);
     expect(find.text('CONTENT'), findsNothing);
 
-    await tester.tap(find.text('展开内容'));
+    await tester.tap(find.text('展开'));
     await tester.pumpAndSettle();
     expect(find.text('CONTENT'), findsOneWidget);
     expect(find.text('收起'), findsOneWidget);

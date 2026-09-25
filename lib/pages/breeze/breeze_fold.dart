@@ -153,7 +153,7 @@ class _BreezeFoldState extends State<BreezeFold> {
     if (result != null && result.fold) {
       final bar = _Hint(
         label: foldLabel(_raw!, result),
-        action: _expanded ? '收起' : '展开内容',
+        action: _expanded ? '收起' : '展开',
         expanded: _expanded,
         onTap: () => setState(() => _expanded = !_expanded),
       );
