@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 
 const breezeClassificationVersion = 'events-v5';
 const breezeJevApi = 'https://api.typesafe.ai/v1/systemone';
+const breezeCustomPromptLimit = 2000;
 const breezeCategories = ['ad', 'giveaway', 'recruitment', 'event'];
 const breezeCategoryLabels = {
   'ad': '广告',
@@ -107,6 +108,9 @@ class BreezeConfig {
   final String apiModel;
   final BreezeProtocol apiProtocol;
 
+  /// Extra rules from the user, appended to the built-in instructions.
+  final String customPrompt;
+
   const BreezeConfig({
     this.enabled = true,
     this.dynamics = true,
@@ -126,6 +130,7 @@ class BreezeConfig {
     this.apiUrl = '',
     this.apiModel = '',
     this.apiProtocol = BreezeProtocol.openai,
+    this.customPrompt = '',
   });
 
   static int clampInt(Object? value, int lo, int hi, int fallback) {
@@ -198,7 +203,13 @@ String breezeCacheKey(Map<String, dynamic> state, BreezeConfig config) {
   final service = config.provider == BreezeProvider.custom
       ? [config.apiUrl, config.apiProtocol.name, config.apiModel]
       : [breezeJevApi, 'jev', 'jev-latest'];
-  return sha256Hex([breezeClassificationVersion, service, state]);
+  // Without a custom prompt the key is unchanged, so existing results stay valid.
+  return sha256Hex([
+    breezeClassificationVersion,
+    service,
+    state,
+    if (config.customPrompt.isNotEmpty) config.customPrompt,
+  ]);
 }
 
 bool _validAuthorId(String id) => RegExp(r'^\d+$').hasMatch(id);
@@ -362,29 +373,33 @@ BreezeRequest buildRequest(Map<String, dynamic> state, BreezeConfig config) {
     }
   }
   final openai = custom && config.apiProtocol == BreezeProtocol.openai;
+  // User rules come after the built-in rules and before the output format.
+  final userRules = config.customPrompt.isEmpty
+      ? ''
+      : '用户补充规则（与上文冲突时以此为准，不改变输出格式）：${config.customPrompt}\n';
   final questions = <String, dynamic>{
     'is_event': {
       'type': 'noul',
-      'instructions': '$_instructions$_eventInstructions 返回活动宣传概率。',
+      'instructions': '$_instructions$_eventInstructions$userRules 返回活动宣传概率。',
     },
     'is_ad': {
       'type': 'noul',
-      'instructions': '$_instructions$_eventInstructions 返回广告概率。',
+      'instructions': '$_instructions$_eventInstructions$userRules 返回广告概率。',
     },
     'is_recruitment': {
       'type': 'noul',
-      'instructions': '$_instructions$_eventInstructions 返回真实岗位招聘概率。',
+      'instructions': '$_instructions$_eventInstructions$userRules 返回真实岗位招聘概率。',
     },
   };
   final lottery = isGiveaway(state['text'] as String);
   if (lottery) {
     questions['giveaway_primary'] = {
       'type': 'noul',
-      'instructions': '$_lotteryInstructions 返回主要抽奖的置信度。',
+      'instructions': '$_lotteryInstructions$userRules 返回主要抽奖的置信度。',
     };
     questions['giveaway_incidental'] = {
       'type': 'noul',
-      'instructions': '$_lotteryInstructions 返回附带抽奖的置信度。',
+      'instructions': '$_lotteryInstructions$userRules 返回附带抽奖的置信度。',
     };
   }
   final outputInstructions = lottery
@@ -397,7 +412,7 @@ BreezeRequest buildRequest(Map<String, dynamic> state, BreezeConfig config) {
             {
               'role': 'system',
               'content':
-                  _instructions + _eventInstructions + outputInstructions,
+                  _instructions + _eventInstructions + userRules + outputInstructions,
             },
             {'role': 'user', 'content': jsonEncode(state)},
           ],

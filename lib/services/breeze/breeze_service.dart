@@ -30,12 +30,19 @@ abstract final class BreezeKey {
       provider = 'breezeProvider',
       apiUrl = 'breezeApiUrl',
       apiModel = 'breezeApiModel',
-      apiProtocol = 'breezeApiProtocol';
+      apiProtocol = 'breezeApiProtocol',
+      customPrompt = 'breezeCustomPrompt';
 
   /// Kept in its own box, never exported with the settings.
   static const String apiKey = 'apiKey';
 
-  static const _serviceKeys = {provider, apiUrl, apiModel, apiProtocol};
+  static const _serviceKeys = {
+    provider,
+    apiUrl,
+    apiModel,
+    apiProtocol,
+    customPrompt,
+  };
   static const _scopeKeys = {enabled, dynamics, pinned};
   static const _authorKeys = {enhancedList, autoCautionExcluded};
 }
@@ -166,7 +173,15 @@ abstract final class BreezeService {
       apiUrl: s.get(BreezeKey.apiUrl, defaultValue: ''),
       apiModel: s.get(BreezeKey.apiModel, defaultValue: ''),
       apiProtocol: BreezeProtocol.values[protocolIndex.clamp(0, 1)],
+      customPrompt: _customPrompt(s.get(BreezeKey.customPrompt)),
     );
+  }
+
+  static String _customPrompt(Object? value) {
+    final text = value is String ? value.trim() : '';
+    return text.length > breezeCustomPromptLimit
+        ? text.substring(0, breezeCustomPromptLimit)
+        : text;
   }
 
   /// Call after writing settings; notifies rendered items like the

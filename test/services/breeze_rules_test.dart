@@ -294,6 +294,54 @@ void main() {
     );
   });
 
+  test('custom prompt goes before the output format', () {
+    const prompt = '游戏官方号宣传新活动也算广告';
+    final state = sanitize(
+      const BreezeRaw(
+        kind: BreezeKind.dynamic,
+        text: '互动抽奖 转发关注抽1人送耳机',
+        originalText: '感谢支持',
+        forwardedText: '互动抽奖',
+        links: ['https://t.bilibili.com/1'],
+      ),
+    );
+    expect(
+      breezeCacheKey(state, const BreezeConfig(customPrompt: prompt)),
+      '3732019683af9301e501dd12a35cfd0e38100616e75b531d0701d90e3dc87d3a',
+      reason: 'same key as the extension',
+    );
+
+    const rules = '用户补充规则（与上文冲突时以此为准，不改变输出格式）：$prompt';
+    final jev = buildRequest(
+      state,
+      const BreezeConfig(apiKey: 'k', customPrompt: prompt),
+    );
+    final questions = jev.payload['questions'] as Map;
+    expect(questions.keys, contains('giveaway_primary'));
+    for (final q in questions.values) {
+      expect((q as Map)['instructions'], contains(rules));
+    }
+    expect(jev.payload['model'], 'jev-latest');
+
+    final openai = buildRequest(
+      state,
+      const BreezeConfig(
+        apiKey: 'k',
+        provider: BreezeProvider.custom,
+        apiUrl: 'https://example.test/v1/chat/completions',
+        apiModel: 'm',
+        customPrompt: prompt,
+      ),
+    );
+    final system =
+        ((openai.payload['messages'] as List).first as Map)['content']
+            as String;
+    expect(system.indexOf(rules), lessThan(system.indexOf('输出JSON')));
+
+    final plain = buildRequest(state, const BreezeConfig(apiKey: 'k'));
+    expect(plain.payload.toString(), isNot(contains('用户补充规则')));
+  });
+
   test('fold label', () {
     final r = applyPolicy(_api(ad: .853), _raw, const BreezeConfig(), const []);
     expect(foldLabel(_raw, r), '测试UP · 广告 · 85%');

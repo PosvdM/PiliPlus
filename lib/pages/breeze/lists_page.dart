@@ -19,21 +19,21 @@ class BreezeListsPage extends StatelessWidget {
           title: const Text('UP 主名单'),
           bottom: const TabBar(
             tabs: [
-              Tab(text: '始终显示'),
               Tab(text: '谨慎过滤'),
+              Tab(text: '始终显示'),
             ],
           ),
         ),
         body: const TabBarView(
           children: [
             _AuthorList(
-              listKey: BreezeKey.whitelist,
-              description: '不折叠这些 UP 主的内容，也不调用 API。两个名单同时启用时，白名单优先。',
-            ),
-            _AuthorList(
               listKey: BreezeKey.enhancedList,
               description:
                   '只折叠达到谨慎阈值的广告；抽奖、活动宣传和招聘仍按分类开关处理。移除自动添加的 UP 主后，不会再自动加回。',
+            ),
+            _AuthorList(
+              listKey: BreezeKey.whitelist,
+              description: '不折叠这些 UP 主的内容，也不调用 API。两个名单同时启用时，白名单优先。',
             ),
           ],
         ),

@@ -140,11 +140,29 @@ List<SettingsModel> get breezeSettings => [
     },
   ),
   NormalModel(
+    title: '自定义提示词',
+    leading: const Icon(Icons.edit_note),
+    getSubtitle: () {
+      final prompt = BreezeService.config.customPrompt;
+      return prompt.isEmpty ? '补充识别规则，追加在内置规则之后' : prompt;
+    },
+    onTap: (context, setState) async {
+      final res = await showDialog<String>(
+        context: context,
+        builder: (context) => const _CustomPromptDialog(),
+      );
+      if (res != null) {
+        await BreezeService.put(BreezeKey.customPrompt, res.trim());
+        setState();
+      }
+    },
+  ),
+  NormalModel(
     title: 'UP 主名单',
     leading: const Icon(Icons.people_outline),
     getSubtitle: () {
       final c = BreezeService.config;
-      return '始终显示 ${c.whitelist.length} 位 · 谨慎过滤 ${c.enhancedList.length} 位';
+      return '谨慎过滤 ${c.enhancedList.length} 位 · 始终显示 ${c.whitelist.length} 位';
     },
     onTap: (context, setState) async {
       await Get.to(() => const BreezeListsPage());
@@ -191,3 +209,67 @@ NormalModel _percent({
     }
   },
 );
+
+class _CustomPromptDialog extends StatefulWidget {
+  const _CustomPromptDialog();
+
+  @override
+  State<_CustomPromptDialog> createState() => _CustomPromptDialogState();
+}
+
+class _CustomPromptDialogState extends State<_CustomPromptDialog> {
+  late final _controller = TextEditingController(
+    text: BreezeService.config.customPrompt,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('自定义提示词'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            minLines: 3,
+            maxLines: 8,
+            maxLength: breezeCustomPromptLimit,
+            decoration: const InputDecoration(
+              hintText: '例如：游戏官方号宣传新活动也算广告',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          Text(
+            '追加在内置规则之后，冲突时以此为准。修改后内容会重新识别，使用你的 API 额度；清空后恢复使用原有缓存。',
+            style: theme.textTheme.bodySmall!.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, ''),
+          child: const Text('清空'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
