@@ -140,19 +140,21 @@ List<SettingsModel> get breezeSettings => [
     },
   ),
   NormalModel(
-    title: '自定义提示词',
+    title: '识别 Prompt',
     leading: const Icon(Icons.edit_note),
-    getSubtitle: () {
-      final prompt = BreezeService.config.customPrompt;
-      return prompt.isEmpty ? '补充识别规则，追加在内置规则之后' : prompt;
-    },
+    getSubtitle: () => BreezeService.config.rulesPrompt.isEmpty
+        ? '使用内置 Prompt，可直接修改'
+        : '已修改，可重置为内置 Prompt',
     onTap: (context, setState) async {
       final res = await showDialog<String>(
         context: context,
-        builder: (context) => const _CustomPromptDialog(),
+        builder: (context) => const _PromptDialog(),
       );
       if (res != null) {
-        await BreezeService.put(BreezeKey.customPrompt, res.trim());
+        await BreezeService.put(
+          BreezeKey.rulesPrompt,
+          normalizeBreezePrompt(res),
+        );
         setState();
       }
     },
@@ -210,16 +212,18 @@ NormalModel _percent({
   },
 );
 
-class _CustomPromptDialog extends StatefulWidget {
-  const _CustomPromptDialog();
+class _PromptDialog extends StatefulWidget {
+  const _PromptDialog();
 
   @override
-  State<_CustomPromptDialog> createState() => _CustomPromptDialogState();
+  State<_PromptDialog> createState() => _PromptDialogState();
 }
 
-class _CustomPromptDialogState extends State<_CustomPromptDialog> {
+class _PromptDialogState extends State<_PromptDialog> {
   late final _controller = TextEditingController(
-    text: BreezeService.config.customPrompt,
+    text: BreezeService.config.rulesPrompt.isEmpty
+        ? breezeDefaultPrompt
+        : BreezeService.config.rulesPrompt,
   );
 
   @override
@@ -232,34 +236,36 @@ class _CustomPromptDialogState extends State<_CustomPromptDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('自定义提示词'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            minLines: 3,
-            maxLines: 8,
-            maxLength: breezeCustomPromptLimit,
-            decoration: const InputDecoration(
-              hintText: '例如：游戏官方号宣传新活动也算广告',
-              border: OutlineInputBorder(),
+      title: const Text('识别 Prompt'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              minLines: 6,
+              maxLines: 12,
+              maxLength: breezePromptLimit,
+              style: const TextStyle(fontSize: 14),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          Text(
-            '追加在内置规则之后，冲突时以此为准。修改后内容会重新识别，使用你的 API 额度；清空后恢复使用原有缓存。',
-            style: theme.textTheme.bodySmall!.copyWith(
-              color: theme.colorScheme.outline,
+            Text(
+              '判断广告、招聘和活动宣传的规则，可直接修改。输出格式固定附加；抽奖主次仍用内置规则。修改后内容会重新识别，使用你的 API 额度；恢复内置 Prompt 后沿用原有缓存。',
+              style: theme.textTheme.bodySmall!.copyWith(
+                color: theme.colorScheme.outline,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
+          // Saving empty restores the built-in prompt.
           onPressed: () => Navigator.pop(context, ''),
-          child: const Text('清空'),
+          child: const Text('重置为内置 Prompt'),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),

@@ -294,7 +294,16 @@ void main() {
     );
   });
 
-  test('custom prompt goes before the output format', () {
+  test('editable prompt replaces the rules, output format stays', () {
+    expect(
+      sha256Hex(breezeDefaultPrompt),
+      '0e4c9ccab6ab2a8edf99f42e50cddf8d98a81eb2d9de1ac80bb37a1aa392f661',
+      reason: 'same built-in prompt as the extension',
+    );
+    expect(normalizeBreezePrompt('  $breezeDefaultPrompt  '), '');
+    expect(normalizeBreezePrompt('   '), '');
+    expect(normalizeBreezePrompt('A' * 5000), 'A' * breezePromptLimit);
+
     const prompt = '游戏官方号宣传新活动也算广告';
     final state = sanitize(
       const BreezeRaw(
@@ -306,40 +315,49 @@ void main() {
       ),
     );
     expect(
-      breezeCacheKey(state, const BreezeConfig(customPrompt: prompt)),
+      breezeCacheKey(state, const BreezeConfig(rulesPrompt: prompt)),
       '3732019683af9301e501dd12a35cfd0e38100616e75b531d0701d90e3dc87d3a',
       reason: 'same key as the extension',
     );
 
-    const rules = '用户补充规则（与上文冲突时以此为准，不改变输出格式）：$prompt';
+    final builtin = buildRequest(state, const BreezeConfig(apiKey: 'k'));
+    final builtinQuestions = builtin.payload['questions'] as Map;
+    expect(
+      (builtinQuestions['is_ad'] as Map)['instructions'],
+      '$breezeDefaultPrompt 返回广告概率。',
+    );
+
     final jev = buildRequest(
       state,
-      const BreezeConfig(apiKey: 'k', customPrompt: prompt),
+      const BreezeConfig(apiKey: 'k', rulesPrompt: prompt),
     );
     final questions = jev.payload['questions'] as Map;
-    expect(questions.keys, contains('giveaway_primary'));
-    for (final q in questions.values) {
-      expect((q as Map)['instructions'], contains(rules));
-    }
+    expect((questions['is_ad'] as Map)['instructions'], '$prompt 返回广告概率。');
+    expect(
+      (questions['is_event'] as Map)['instructions'],
+      '$prompt 返回活动宣传概率。',
+    );
+    expect(
+      (questions['giveaway_primary'] as Map)['instructions'],
+      allOf(startsWith('仅判断输入内容中的抽奖主次'), isNot(contains(prompt))),
+      reason: 'giveaway rules stay built in',
+    );
     expect(jev.payload['model'], 'jev-latest');
 
     final openai = buildRequest(
-      state,
+      sanitize(const BreezeRaw(kind: BreezeKind.dynamic, text: '周边开售')),
       const BreezeConfig(
         apiKey: 'k',
         provider: BreezeProvider.custom,
         apiUrl: 'https://example.test/v1/chat/completions',
         apiModel: 'm',
-        customPrompt: prompt,
+        rulesPrompt: prompt,
       ),
     );
     final system =
         ((openai.payload['messages'] as List).first as Map)['content']
             as String;
-    expect(system.indexOf(rules), lessThan(system.indexOf('输出JSON')));
-
-    final plain = buildRequest(state, const BreezeConfig(apiKey: 'k'));
-    expect(plain.payload.toString(), isNot(contains('用户补充规则')));
+    expect(system, startsWith('$prompt只输出JSON'));
   });
 
   test('fold label', () {

@@ -31,7 +31,10 @@ abstract final class BreezeKey {
       apiUrl = 'breezeApiUrl',
       apiModel = 'breezeApiModel',
       apiProtocol = 'breezeApiProtocol',
-      customPrompt = 'breezeCustomPrompt';
+      rulesPrompt = 'breezeRulesPrompt';
+
+  /// Pre-release extra prompt appended to the built-in rules; migrated.
+  static const String _legacyCustomPrompt = 'breezeCustomPrompt';
 
   /// Kept in its own box, never exported with the settings.
   static const String apiKey = 'apiKey';
@@ -41,7 +44,7 @@ abstract final class BreezeKey {
     apiUrl,
     apiModel,
     apiProtocol,
-    customPrompt,
+    rulesPrompt,
   };
   static const _scopeKeys = {enabled, dynamics, pinned};
   static const _authorKeys = {enhancedList, autoCautionExcluded};
@@ -101,12 +104,29 @@ abstract final class BreezeService {
         compactionStrategy: (entries, deletedEntries) => deletedEntries > 50,
       ).then((res) => _history = res),
     ]);
+    await _migratePrompt();
     final now = DateTime.now().millisecondsSinceEpoch;
     final expired = _cache.keys.where((k) {
       final e = _cache.get(k);
       return e is! Map || (e['expires'] as int? ?? 0) <= now;
     }).toList();
     if (expired.isNotEmpty) await _cache.deleteAll(expired);
+  }
+
+  // Keeps the meaning of an extra prompt from earlier test builds.
+  static Future<void> _migratePrompt() async {
+    final s = GStorage.setting;
+    final old = s.get(BreezeKey._legacyCustomPrompt);
+    if (old is! String) return;
+    if (old.trim().isNotEmpty && s.get(BreezeKey.rulesPrompt) == null) {
+      await s.put(
+        BreezeKey.rulesPrompt,
+        normalizeBreezePrompt(
+          '$breezeDefaultPrompt\n用户补充规则（与上文冲突时以此为准）：${old.trim()}',
+        ),
+      );
+    }
+    await s.delete(BreezeKey._legacyCustomPrompt);
   }
 
   static List<Box<dynamic>> get boxes => [_secret, _cache, _history];
@@ -173,15 +193,8 @@ abstract final class BreezeService {
       apiUrl: s.get(BreezeKey.apiUrl, defaultValue: ''),
       apiModel: s.get(BreezeKey.apiModel, defaultValue: ''),
       apiProtocol: BreezeProtocol.values[protocolIndex.clamp(0, 1)],
-      customPrompt: _customPrompt(s.get(BreezeKey.customPrompt)),
+      rulesPrompt: normalizeBreezePrompt(s.get(BreezeKey.rulesPrompt)),
     );
-  }
-
-  static String _customPrompt(Object? value) {
-    final text = value is String ? value.trim() : '';
-    return text.length > breezeCustomPromptLimit
-        ? text.substring(0, breezeCustomPromptLimit)
-        : text;
   }
 
   /// Call after writing settings; notifies rendered items like the
