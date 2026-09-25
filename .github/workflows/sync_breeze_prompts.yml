@@ -119,6 +119,12 @@ jobs:
 
           if gh pr view "$BRANCH" --json state --jq .state 2>/dev/null | grep -q OPEN; then
             gh pr edit "$BRANCH" --title "$title" --body "$body"
+            # A draft marks a pull request that still needs a manual port.
+            if [ "$PASSED" = "true" ]; then
+              gh pr ready "$BRANCH" || true
+            else
+              gh pr ready --undo "$BRANCH" || true
+            fi
           else
             draft=""
             [ "$PASSED" = "true" ] || draft="--draft"
