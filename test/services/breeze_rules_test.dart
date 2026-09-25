@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:PiliPlus/services/breeze/breeze_rules.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,20 +67,7 @@ void main() {
     }
   });
 
-  test('cache and history keys match the extension', () {
-    final state = sanitize(
-      const BreezeRaw(
-        kind: BreezeKind.dynamic,
-        text: '互动抽奖 转发关注抽1人送耳机',
-        originalText: '感谢支持',
-        forwardedText: '互动抽奖',
-        links: ['https://t.bilibili.com/1'],
-      ),
-    );
-    expect(
-      breezeCacheKey(state, const BreezeConfig()),
-      '4ec74085f9ed25466ccc1a133aa704d8b446f4da9a5e579977a3eef9570c6135',
-    );
+  test('history keys match the extension', () {
     expect(
       historyId(
         const BreezeRaw(
@@ -294,78 +284,56 @@ void main() {
     );
   });
 
+  // Generated from the extension by .github/scripts/sync-breeze-prompts.cjs.
   test('prompts and requests match the extension', () {
-    expect(breezeClassificationVersion, 'general-rules-v8');
-    expect(
-      sha256Hex(breezeDefaultPrompt),
-      '7d38e3528fb0ec9d7e6eaad4faedcc6cb180457b8881ef2e1836e5626e6bfece',
-    );
-    expect(
-      sha256Hex(breezeGiveawayPrompt),
-      '3de847744207fe15ce775dd8a6394abd105b65e422eba97c21939ed40e69fa3d',
-    );
+    final fixtures = jsonDecode(
+      File('test/services/breeze_prompt_fixtures.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    expect(breezeClassificationVersion, fixtures['classificationVersion']);
+    expect(breezePromptLimit, fixtures['promptLimit']);
+    expect(sha256Hex(breezeDefaultPrompt), fixtures['defaultPrompt']);
+    expect(sha256Hex(breezeGiveawayPrompt), fixtures['giveawayPrompt']);
 
-    const lotteryRaw = BreezeRaw(
-      kind: BreezeKind.dynamic,
-      text: '互动抽奖 转发关注抽1人送耳机',
-      originalText: '感谢支持',
-      forwardedText: '互动抽奖',
-      links: ['https://t.bilibili.com/1'],
-    );
-    const officialRaw = BreezeRaw(
-      kind: BreezeKind.dynamic,
-      author: '  游戏科学  ',
-      authorId: '123',
-      text: '《黑神话：钟馗》首支预告',
-    );
-    final lottery = sanitize(lotteryRaw);
-    final official = sanitize(officialRaw);
-    expect(official['author'], '游戏科学');
-    expect(
-      official.containsKey('authorId'),
-      isFalse,
-      reason: 'UID stays local',
-    );
-
-    expect(
-      breezeCacheKey(
-        lottery,
-        const BreezeConfig(rulesPrompt: '游戏官方号宣传新活动也算广告'),
-      ),
-      'a3bfc20ee9b14883c89d8349f06612e10ec5b401c0ebe8f66099a3bbdaf54fbb',
-    );
-
-    String payload(Map<String, dynamic> state, BreezeConfig config) =>
-        sha256Hex(buildRequest(state, config).payload);
-    const openai = BreezeConfig(
-      provider: BreezeProvider.custom,
-      apiUrl: 'https://example.test/v1/chat/completions',
-      apiModel: ' m ',
-    );
-    expect(
-      payload(lottery, const BreezeConfig()),
-      '17612581b18d73bf0da1a82edd4f253dd2315afaf220479168bf78162042c75c',
-    );
-    expect(
-      payload(official, const BreezeConfig()),
-      'bdd0be17c00614ddfd455fca1dd3fee509aedaa2024670da089d0de06b10d510',
-    );
-    expect(
-      payload(
-        lottery,
-        const BreezeConfig(
-          provider: BreezeProvider.custom,
-          apiUrl: 'https://example.test/v1/chat/completions',
-          apiModel: ' m ',
-          rulesPrompt: '只判断品牌商单。',
+    for (final c in (fixtures['cases'] as List).cast<Map<String, dynamic>>()) {
+      final raw = c['raw'] as Map<String, dynamic>;
+      final config = c['config'] as Map<String, dynamic>;
+      final expected = c['expected'] as Map<String, dynamic>;
+      final state = sanitize(
+        BreezeRaw(
+          kind: BreezeKind.values.byName(raw['kind']),
+          text: raw['text'] ?? '',
+          originalText: raw['originalText'],
+          forwardedText: raw['forwardedText'],
+          title: raw['title'] ?? '',
+          links: (raw['links'] as List? ?? const []).cast<String>(),
+          author: raw['author'] ?? '',
         ),
-      ),
-      '124a4c4339ce0e721a306cb0770d1366fe57201b62303a24621ffa9b730d52ed',
-    );
-    expect(
-      payload(official, openai),
-      'be7d06f63509664b096d9ea1fd49ab455edaeae0db4489da75bb6d67a4d5fbcc',
-    );
+      );
+      final breeze = BreezeConfig(
+        apiKey: 'k',
+        provider: BreezeProvider.values.byName(config['provider']),
+        apiProtocol: BreezeProtocol.values.byName(
+          config['apiProtocol'] ?? 'openai',
+        ),
+        apiUrl: config['apiUrl'] ?? '',
+        apiModel: config['apiModel'] ?? '',
+        rulesPrompt: normalizeBreezePrompt(config['rulesPrompt']),
+      );
+      final request = buildRequest(state, breeze);
+      final name = c['name'];
+      expect(sha256Hex(state), expected['state'], reason: '$name: state');
+      expect(request.lottery, expected['lottery'], reason: '$name: lottery');
+      expect(
+        breezeCacheKey(state, breeze),
+        expected['cacheKey'],
+        reason: '$name: cache key',
+      );
+      expect(
+        sha256Hex(request.payload),
+        expected['payload'],
+        reason: '$name: request',
+      );
+    }
   });
 
   test('editable prompt replaces the rules, output format stays', () {
@@ -382,7 +350,7 @@ void main() {
     expect((questions['is_ad'] as Map)['instructions'], '$prompt\n返回广告概率。');
     expect(
       (questions['giveaway_primary'] as Map)['instructions'],
-      allOf(startsWith('仅判断输入内容中的抽奖主次'), isNot(contains(prompt))),
+      allOf(startsWith(breezeGiveawayPrompt), isNot(contains(prompt))),
       reason: 'giveaway rules stay built in',
     );
     final builtin = buildRequest(state, const BreezeConfig()).payload;

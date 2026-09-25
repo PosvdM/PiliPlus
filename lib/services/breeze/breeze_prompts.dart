@@ -1,7 +1,9 @@
 import 'dart:convert';
 
-// Mirrors prompts/ in BiliBreeze (https://github.com/PosvdM/bili-breeze).
-// Keep the text identical to the extension; tests compare digests.
+// Generated from PosvdM/bili-breeze prompts/ at 29f5cc2 by
+// .github/scripts/sync-breeze-prompts.cjs. Edit the extension, not the text
+// here; the request assembly below is checked against the extension by
+// test/services/breeze_prompt_fixtures.json.
 
 /// Bump when classification rules change, so cached decisions are not reused.
 const breezeClassificationVersion = 'general-rules-v8';
