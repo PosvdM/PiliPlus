@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-// Generated from PosvdM/bili-breeze prompts/ at 0000000 by
+// Generated from PosvdM/bili-breeze prompts/ at 29f5cc2 by
 // .github/scripts/sync-breeze-prompts.cjs. Edit the extension, not the text
 // here; the request assembly below is checked against the extension by
 // test/services/breeze_prompt_fixtures.json.
