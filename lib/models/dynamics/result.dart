@@ -1077,6 +1077,7 @@ class DynamicArchiveModel {
   int? type;
   int? epid;
   int? seasonId;
+  String? desc;
 
   DynamicArchiveModel.fromJson(Map<String, dynamic> json) {
     id = safeToInt(json['id']);
@@ -1091,6 +1092,7 @@ class DynamicArchiveModel {
     type = safeToInt(json['type']);
     epid = safeToInt(json['epid']);
     seasonId = safeToInt(json['season_id']);
+    desc = json['desc'];
   }
 }
 

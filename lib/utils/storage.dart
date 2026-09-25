@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:PiliPlus/models/model_owner.dart';
 import 'package:PiliPlus/models/user/danmaku_rule_adapter.dart';
 import 'package:PiliPlus/models/user/info.dart';
+import 'package:PiliPlus/services/breeze/breeze_service.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/accounts/account_adapter.dart';
 import 'package:PiliPlus/utils/accounts/account_type_adapter.dart';
@@ -62,6 +63,7 @@ abstract final class GStorage {
           return deletedEntries > 4;
         },
       ).then((res) => watchProgress = res),
+      BreezeService.init(),
     ]);
 
     if (Pref.saveReply) {
@@ -118,6 +120,7 @@ abstract final class GStorage {
       Accounts.account.compact(),
       watchProgress.compact(),
       ?reply?.compact(),
+      for (final box in BreezeService.boxes) box.compact(),
     ]);
   }
 
@@ -131,6 +134,7 @@ abstract final class GStorage {
       Accounts.account.close(),
       watchProgress.close(),
       ?reply?.close(),
+      for (final box in BreezeService.boxes) box.close(),
     ]);
   }
 
@@ -144,6 +148,7 @@ abstract final class GStorage {
       Accounts.clear(),
       watchProgress.clear(),
       ?reply?.clear(),
+      for (final box in BreezeService.boxes) box.clear(),
     ]);
   }
 
