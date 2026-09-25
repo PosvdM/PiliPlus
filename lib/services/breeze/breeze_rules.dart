@@ -188,7 +188,7 @@ Map<String, dynamic> sanitize(BreezeRaw raw) => {
   'platform': 'bilibili',
   'kind': raw.kind.name,
   // Context for official and self-published works; the UID stays local.
-  'author': _cut(raw.author.trim(), 80),
+  'author': _cut(raw.author.trim(), 2),
   'text': _cut(raw.text, 8000),
   if (raw.originalText != null || raw.forwardedText != null) ...{
     'originalText': _cut(raw.originalText, 8000),
